@@ -400,8 +400,33 @@ def discover_sources():
         sources.append(("claude-code", files, parse_session))
     if CODEX_DIR.exists():
         sources.append(("codex", list(CODEX_DIR.rglob("rollout-*.jsonl")), parse_codex_session))
-    # 未来扩展：Gemini CLI / Cursor / Cline 等在此追加 detect + parser
+    # 新法器扩展：在此追加 detect + parser（拿到真实样本才写解析器，绝不赌格式）
     return sources
+
+# 已探测到、但尚未接入的法器（有目录=用户在用；提示提交样本，拿到当天出适配器）
+UNSUPPORTED_TOOLS = [
+    ("Gemini CLI", Path.home() / ".gemini"),
+    ("Qwen Code", Path.home() / ".qwen"),
+    ("iFlow CLI", Path.home() / ".iflow"),
+    ("GitHub Copilot CLI", Path.home() / ".copilot"),
+    ("Cursor", Path.home() / ".cursor"),
+    ("Windsurf", Path.home() / ".windsurf"),
+    ("OpenCode", Path.home() / ".opencode"),
+    ("Aider", Path.home() / ".aider"),
+]
+if IS_WIN:
+    _VSC_STORE = Path(os.environ.get("APPDATA", "")) / "Code" / "User" / "globalStorage"
+else:
+    _VSC_STORE = Path.home() / ("Library/Application Support/Code/User/globalStorage" if IS_MAC
+                                else ".config/Code/User/globalStorage")
+UNSUPPORTED_TOOLS += [
+    ("Cline", _VSC_STORE / "saoudrizwan.claude-dev"),
+    ("Roo Code", _VSC_STORE / "rooveterinaryinc.roo-cline"),
+]
+
+def detect_unsupported():
+    """返回本机在用但尚未接入的 AI 工具名列表。"""
+    return [name for name, p in UNSUPPORTED_TOOLS if p.exists()]
 
 # ---------- 单会话判定（产出 raw 记录，不含日级反刷） ----------
 def judge(s, template_counts):

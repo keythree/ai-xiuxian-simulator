@@ -44,6 +44,9 @@ def first_scan(log=print):
         log("  请先用一段时间 AI，再重新运行本安装。")
         return False
     log("识别到法器：" + "、".join(core.SRC_NAMES.get(s, s) for s, _f, _p in sources))
+    extra = core.detect_unsupported()
+    if extra:
+        log("另发现尚未接入的法器：" + "、".join(extra) + "（GitHub 开 Issue 可帮你接入）")
     import scan
     sys.argv = [sys.argv[0]]
     scan.main()
