@@ -335,10 +335,18 @@ class Sticky:
                 p = json.load(f)
             x, y = p["x"], p["y"]
             self.tab = p.get("tab", "manual")
+            if core.IS_WIN:
+                # 记忆坐标已不在任何已连接显示器范围内（拔了副屏等）→ 重置回主屏
+                import ctypes
+                u = ctypes.windll.user32
+                vx, vy = u.GetSystemMetrics(76), u.GetSystemMetrics(77)
+                vw, vh = u.GetSystemMetrics(78), u.GetSystemMetrics(79)
+                if not (vx - 60 <= x <= vx + vw - 60 and vy - 60 <= y <= vy + vh - 60):
+                    raise ValueError("悬空坐标")
         except Exception:
             x = self.root.winfo_screenwidth() - W - 22
             y = 64
-            self.tab = "manual"
+            self.tab = getattr(self, "tab", "manual")
         self.root.geometry(f"{W}x600+{x}+{y}")
 
     def _save_pos(self):
