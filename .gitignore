@@ -6,6 +6,9 @@ badge-log.json
 pending.json
 watchdog-state.json
 watchdog-tasks.json
+.sticky_pos.json
+.sticky_dismissed.json
+.sticky_closed
 
 # 生成产物
 *.html
