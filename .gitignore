@@ -1,0 +1,17 @@
+# 玩家本地数据，绝不入库
+config.json
+ledger.json
+state.json
+badge-log.json
+pending.json
+watchdog-state.json
+watchdog-tasks.json
+
+# 生成产物
+*.html
+__pycache__/
+*.pyc
+
+# 内部设计文档（规则黑箱）
+RULES-内部.md
+DESIGN.md

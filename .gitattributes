@@ -1,0 +1,10 @@
+# 发布 zip（git archive）里不放 git 自己的配置文件，小白解压看不到杂物
+.gitattributes export-ignore
+.gitignore export-ignore
+
+*.command text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.bat text eol=crlf
+*.wav binary
+*.png binary

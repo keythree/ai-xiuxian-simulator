@@ -1,0 +1,12 @@
+{
+  "_说明": "护法时刻表示例。复制本文件为 watchdog-tasks.json 并按你自己的定时任务改写。不建 watchdog-tasks.json 则护法功能自动关闭。",
+  "log_dir": "logs",
+  "grace_minutes": 90,
+  "tasks": [
+    {"name": "示例内容引擎", "hours": [9, 18], "minute": 0, "match": ["my-daily-task"]},
+    {"name": "示例周一巡查", "hours": [14], "minute": 0, "weekdays": [1], "match": ["weekly-patrol"]}
+  ],
+  "schtasks": [
+    {"name": "示例系统计划任务", "task": "My-Scheduled-Task"}
+  ]
+}
