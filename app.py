@@ -66,11 +66,15 @@ def dispatch():
         except Exception:
             pass
         sys.exit(0)
+    if cmd == "stickyboot":
+        # SessionStart hook 用：派生独立贴纸进程后立刻退出，不占 hook 生命周期
+        launch_sticky(follow=True)
+        sys.exit(0)
     gui()
 
 
-def launch_sticky():
-    """独立进程拉起桌面贴纸（主界面）。"""
+def launch_sticky(follow=False):
+    """独立进程拉起桌面贴纸（主界面）。follow=True 时尊重当天手动关闭。"""
     import subprocess
     from pathlib import Path
     import core
@@ -82,9 +86,11 @@ def launch_sticky():
     else:
         exe = str(py)
         kw = {"start_new_session": True, "close_fds": True}
+    args = [exe, str(Path(__file__).resolve().parent / "sticky.py")]
+    if follow:
+        args.append("--follow")
     try:
-        subprocess.Popen([exe, str(Path(__file__).resolve().parent / "sticky.py")],
-                         cwd=str(Path(__file__).resolve().parent), **kw)
+        subprocess.Popen(args, cwd=str(Path(__file__).resolve().parent), **kw)
     except Exception:
         pass
 

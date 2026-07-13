@@ -95,10 +95,26 @@ def install_schedule(log=print):
     else:
         log("当前系统暂不支持自动挂载，请手动定时运行 scan --notify。")
 
+def _ensure_hook(cfg, event, dedup_keys, entry):
+    """往 settings.json 的指定 hook 事件里塞一条，已有同类则跳过。返回是否新增。"""
+    groups = cfg.setdefault("hooks", {}).setdefault(event, [])
+    for grp in groups:
+        for h in grp.get("hooks", []):
+            sig = str(h.get("args", [])) + str(h.get("command", ""))
+            if any(k in sig for k in dedup_keys):
+                return False
+    if groups:
+        groups[0].setdefault("hooks", []).append(entry)
+    else:
+        groups.append({"hooks": [entry]})
+    return True
+
 def install_claude_hook(log=print):
+    """挂三条 Claude Code hook：
+    Stop=实时结算 / Notification=「等你确认」标记 / SessionStart=自动拉起贴纸。"""
     settings = Path.home() / ".claude" / "settings.json"
     if not (Path.home() / ".claude").exists():
-        log("未装 Claude Code，跳过实时结算（每小时结算已覆盖）。")
+        log("未装 Claude Code，跳过实时挂钩（每小时结算已覆盖）。")
         return
     try:
         cfg = {}
@@ -106,29 +122,32 @@ def install_claude_hook(log=print):
             shutil.copy2(settings, str(settings) + ".bak")
             with open(settings, encoding="utf-8") as f:
                 cfg = json.load(f)
-        if core.FROZEN:
-            hook_entry = {"type": "command", "command": sys.executable,
-                          "args": ["settle"], "async": True, "timeout": 60,
-                          "statusMessage": "修仙结算中"}
+        here = Path(__file__).resolve().parent
+        py = sys.executable.replace("pythonw.exe", "python.exe")
+
+        def entry(args, timeout, msg):
+            if core.FROZEN:
+                return {"type": "command", "command": sys.executable, "args": args[1:] or args,
+                        "async": True, "timeout": timeout, "statusMessage": msg}
+            return {"type": "command", "command": py, "args": args,
+                    "async": True, "timeout": timeout, "statusMessage": msg}
+
+        added = []
+        if _ensure_hook(cfg, "Stop", ["settle.py", "'settle'"],
+                        entry([str(here / "settle.py")], 60, "修仙结算中")):
+            added.append("实时结算")
+        if _ensure_hook(cfg, "Notification", ["notify_mark"],
+                        entry([str(here / "notify_mark.py")], 30, "标记等待")):
+            added.append("等你确认标记")
+        if _ensure_hook(cfg, "SessionStart", ["sticky", "stickyboot"],
+                        entry([str(here / "app.py"), "stickyboot"], 30, "拉起贴纸")):
+            added.append("贴纸自动跟随")
+        if added:
+            with open(settings, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+            log("Claude Code 挂钩完成：" + "、".join(added) + "。")
         else:
-            settle_py = str(Path(__file__).resolve().parent / "settle.py")
-            hook_entry = {"type": "command", "command": sys.executable.replace("pythonw.exe", "python.exe"),
-                          "args": [settle_py], "async": True, "timeout": 60,
-                          "statusMessage": "修仙结算中"}
-        stop = cfg.setdefault("hooks", {}).setdefault("Stop", [])
-        for grp in stop:
-            for h in grp.get("hooks", []):
-                sig = str(h.get("args", [])) + str(h.get("command", ""))
-                if "settle.py" in sig or h.get("args") == ["settle"]:
-                    log("Claude Code 实时结算：已存在，跳过。")
-                    return
-        if stop:
-            stop[0].setdefault("hooks", []).append(hook_entry)
-        else:
-            stop.append({"hooks": [hook_entry]})
-        with open(settings, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-        log("Claude Code 实时结算：已挂载（每次会话结束秒级结算，突破即弹窗）。")
+            log("Claude Code 挂钩：全部已存在，跳过。")
     except Exception as e:
         log(f"Claude Code hook 挂载失败（{e}），每小时结算仍然有效。")
 
