@@ -54,6 +54,22 @@ def save_dismissed(kind, key):
         pass
 
 
+# ── 台账缓存（一次渲染只读一遍磁盘，mtime 变了才重读）──
+_LEDGER_CACHE = {"mtime": None, "data": []}
+
+
+def read_ledger():
+    try:
+        mt = os.path.getmtime(core.LEDGER)
+        if _LEDGER_CACHE["mtime"] != mt:
+            with open(core.LEDGER, encoding="utf-8") as f:
+                _LEDGER_CACHE["data"] = json.load(f)
+            _LEDGER_CACHE["mtime"] = mt
+        return _LEDGER_CACHE["data"]
+    except Exception:
+        return []
+
+
 # ── 阵法时刻表（可选：读 watchdog-tasks.json，没有则阵法页显示引导）──
 def load_tasks():
     try:
@@ -81,10 +97,9 @@ def load_cult():
             st = json.load(f)
         today = datetime.now().strftime("%Y-%m-%d")
         gain = 0.0
-        with open(core.LEDGER, encoding="utf-8") as f:
-            for r in json.load(f):
-                if r.get("day") == today:
-                    gain += r.get("total_xp", 0)
+        for r in read_ledger():
+            if r.get("day") == today:
+                gain += r.get("total_xp", 0)
         levels = st["levels"]
         main_job = max(levels, key=lambda j: (levels[j], st["job_xp"].get(j, 0)))
         lv = levels[main_job]
@@ -103,8 +118,7 @@ def load_task_activity():
     try:
         with open(core.OUT_DIR / "watchdog-tasks.json", encoding="utf-8") as f:
             conf = json.load(f)
-        with open(core.LEDGER, encoding="utf-8") as f:
-            ledger = json.load(f)
+        ledger = read_ledger()
         act = {}
         for t in conf.get("tasks", []):
             kws = [k.lower() for k in t["match"]]
@@ -123,8 +137,7 @@ def load_live_sessions(limit=10):
     """历练动态：今天活跃的亲手会话 + 状态。"""
     try:
         import glob, time
-        with open(core.LEDGER, encoding="utf-8") as f:
-            idx = {r["session"]: r for r in json.load(f)}
+        idx = {r["session"]: r for r in read_ledger()}
         try:
             with open(core.OUT_DIR / "pending.json", encoding="utf-8") as f:
                 pending = json.load(f)
@@ -155,6 +168,24 @@ def load_live_sessions(limit=10):
             else:
                 st, info = "idle", datetime.fromtimestamp(mt).strftime("%H:%M")
             rows.append((mt, fm[:21], st, info, sid))
+        # Codex 会话（只扫今天的日期分片目录，Codex-only 用户历练页不空白）
+        nowd = datetime.now()
+        tdir = core.CODEX_DIR / f"{nowd:%Y}" / f"{nowd:%m}" / f"{nowd:%d}"
+        for path in glob.glob(str(tdir / "*.jsonl")):
+            mt = os.path.getmtime(path)
+            if mt < today0:
+                continue
+            sid = os.path.basename(path)[:-6]
+            rec = idx.get(sid)
+            if rec and rec.get("auto"):
+                continue
+            fm = (rec or {}).get("first_msg", "") or "Codex 历练"
+            age = now_ts - mt
+            if age < 120:
+                st, info = "running", ""
+            else:
+                st, info = "idle", datetime.fromtimestamp(mt).strftime("%H:%M")
+            rows.append((mt, fm[:21], st, info, sid))
         dismissed = set(load_dismissed()["sessions"])
         rows = [r for r in rows if r[4] not in dismissed]
         rows.sort(key=lambda x: -x[0])
@@ -165,8 +196,7 @@ def load_live_sessions(limit=10):
 
 def load_report():
     try:
-        with open(core.LEDGER, encoding="utf-8") as f:
-            ledger = json.load(f)
+        ledger = read_ledger()
         with open(core.STATE, encoding="utf-8") as f:
             st = json.load(f)
         today = datetime.now().strftime("%Y-%m-%d")
@@ -389,8 +419,10 @@ class Sticky:
         if k == self.tab:
             return
         self.tab = k
+        self._apply_tab()               # 先立刻换页换高亮（旧数据），手感即时
+        self.root.update_idletasks()
         self._save_pos()
-        self.full_render()
+        self.full_render()              # 再刷数据
 
     def _drag_start(self, e):
         self._drag = (e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y())
