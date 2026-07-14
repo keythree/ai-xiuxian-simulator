@@ -117,9 +117,10 @@ def buff_covers(day):
 
 # ---------- 职业等级曲线（RuneScape，1 到 99） ----------
 def _build_level_table():
+    # 07-14 BK 定：指数 L/7 → L/20（两次加速），重度玩家约 5 个月可及飞升（原曲线到顶要二十年）
     cum, table = 0, [0, 0]
     for L in range(1, 99):
-        cum += math.floor((L + 300 * 2 ** (L / 7)) / 4)
+        cum += math.floor((L + 300 * 2 ** (L / 20)) / 4)
         table.append(cum)
     return table
 
@@ -134,13 +135,13 @@ def xp_to_level(xp):
             break
     return lv
 
-# ---------- 总等级曲线（LOL 式，无上限） ----------
+# ---------- 总等级曲线（LOL 式，无上限；07-14 BK 定提速一倍：需求减半，境界曲线不动） ----------
 def total_xp_to_level(xp):
-    lv, need = 1, 600.0
+    lv, need = 1, 300.0
     while xp >= need:
         xp -= need
         lv += 1
-        need = 500.0 + 100.0 * lv
+        need = 250.0 + 50.0 * lv
     return lv, xp, need  # 等级、当前级内 XP、升下一级所需
 
 # ---------- 职业与修仙称号 ----------
@@ -877,3 +878,244 @@ td{{padding:8px 12px;font-size:13px;border-top:1px solid #1c2230}}
                 f.write(page)
         except OSError:
             pass
+
+
+# ── 彩色机缘图标（Tk 8.6 渲不出彩色 emoji：无头浏览器渲一张图集，Tk 切片缓存成 PNG）──
+EMOJI_CACHE = OUT_DIR / ".emoji_cache"
+_ICON_BROWSERS = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+]
+
+
+def emoji_icon_path(ch, px=30):
+    return EMOJI_CACHE / ("-".join(f"{ord(c):04x}" for c in ch) + f"_{px}.png")
+
+
+def ensure_emoji_icons(chars, px=30, bg="#171b22"):
+    """把缺的 emoji 渲成彩色小图，返回 {emoji: PNG路径}。渲不了的缺席，调用方回退字体剪影。"""
+    want = []
+    for ch in dict.fromkeys(chars):
+        if ch and max(ord(c) for c in ch) >= 0x2100:
+            want.append(ch)
+    if not want:
+        return {}
+    todo = [ch for ch in want if not emoji_icon_path(ch, px).exists()]
+    if todo:
+        try:
+            _render_emoji_atlas(todo, px, bg)
+        except Exception:
+            pass
+    return {ch: emoji_icon_path(ch, px) for ch in want if emoji_icon_path(ch, px).exists()}
+
+
+def _render_emoji_atlas(todo, px, bg):
+    import time as _time
+    browser = next((b for b in _ICON_BROWSERS if Path(b).exists()), None)
+    if not browser:
+        return
+    EMOJI_CACHE.mkdir(parents=True, exist_ok=True)
+    cell = px * 2
+    cols = min(8, len(todo))
+    rows = (len(todo) + cols - 1) // cols
+    cells = []
+    for i, ch in enumerate(todo):
+        shown = ch if ("‍" in ch or ch.endswith("️")) else ch + "️"
+        r, c = divmod(i, cols)
+        cells.append(
+            f'<div style="position:absolute;left:{c*cell}px;top:{r*cell}px;'
+            f'width:{cell}px;height:{cell}px;line-height:{cell}px;text-align:center;'
+            f'font-size:{px}px">{html.escape(shown)}</div>')
+    page = (f'<!doctype html><meta charset="utf-8"><body style="margin:0;background:{bg};'
+            f'font-family:\'Segoe UI Emoji\',\'Apple Color Emoji\',sans-serif">'
+            + "".join(cells) + "</body>")
+    atlas_html = EMOJI_CACHE / "_atlas.html"
+    atlas_png = EMOJI_CACHE / "_atlas.png"
+    with open(atlas_html, "w", encoding="utf-8") as f:
+        f.write(page)
+    if atlas_png.exists():
+        atlas_png.unlink()
+    flags = 0x08000000 if os.name == "nt" else 0
+    subprocess.run([
+        browser, "--headless", "--disable-gpu", "--hide-scrollbars",
+        f"--screenshot={atlas_png}", f"--window-size={cols*cell},{rows*cell}",
+        f"--default-background-color={bg.lstrip('#')}", atlas_html.as_uri(),
+    ], capture_output=True, timeout=60, creationflags=flags)
+    for _ in range(20):
+        if atlas_png.exists() and atlas_png.stat().st_size > 100:
+            break
+        _time.sleep(0.3)
+    if not atlas_png.exists():
+        return
+    import tkinter as tk
+    root = getattr(tk, "_default_root", None)
+    own_root = root is None
+    if own_root:
+        root = tk.Tk()
+        root.withdraw()
+    try:
+        atlas = tk.PhotoImage(master=root, file=str(atlas_png))
+        for i, ch in enumerate(todo):
+            r, c = divmod(i, cols)
+            x1, y1 = c * cell, r * cell
+            if x1 + cell > atlas.width() or y1 + cell > atlas.height():
+                continue
+            atlas.write(str(emoji_icon_path(ch, px)), format="png",
+                        from_coords=(x1, y1, x1 + cell, y1 + cell))
+    finally:
+        if own_root:
+            root.destroy()
+
+
+# ── 境界徽章（十境界各一款：SVG 经无头浏览器渲成 PNG 缓存，贴纸直接贴图）──
+MEDAL_PX = 80
+
+
+def realm_medal_path(i, px=MEDAL_PX):
+    return EMOJI_CACHE / f"medal_{i}_{px}.png"
+
+
+def _medal_svg(i, px):
+    import math as _m
+    realm, c1, c2, glow, fx = REALM_STYLE[i]
+    s = px
+    c = s / 2
+    ch = "虚" if realm == "炼虚" else realm[0]  # 炼气/炼虚首字撞车
+    gl = f"filter:drop-shadow(0 0 {round(2 + glow * 7)}px {c1})" if glow > 0.1 else ""
+    txt = (f'<text x="{c}" y="{c + 1}" text-anchor="middle" dominant-baseline="central" '
+           f'font-family="KaiTi,STKaiti,serif" font-weight="bold" font-size="{round(s * 0.33)}" '
+           f'fill="{c1}">{ch}</text>')
+
+    def octagon(cx, cy, r):
+        k = r * 0.414
+        return (f"{cx-k},{cy-r} {cx+k},{cy-r} {cx+r},{cy-k} {cx+r},{cy+k} "
+                f"{cx+k},{cy+r} {cx-k},{cy+r} {cx-r},{cy+k} {cx-r},{cy-k}")
+
+    def hexagon(cx, cy, r):
+        return " ".join(f"{cx + r * _m.sin(_m.radians(a))},{cy - r * _m.cos(_m.radians(a))}"
+                        for a in range(0, 360, 60))
+
+    def star8(cx, cy, r1, r2):
+        pts = []
+        for j in range(16):
+            r = r1 if j % 2 == 0 else r2
+            a = _m.radians(j * 22.5)
+            pts.append(f"{cx + r * _m.sin(a)},{cy - r * _m.cos(a)}")
+        return " ".join(pts)
+
+    defs = (f'<defs><linearGradient id="g{i}" x1="0" y1="0" x2="1" y2="1">'
+            f'<stop offset="0" stop-color="{c1}"/><stop offset="1" stop-color="{c2}"/>'
+            f'</linearGradient><linearGradient id="rb" x1="0" y1="0" x2="1" y2="1">'
+            f'<stop offset="0" stop-color="#ff5f6d"/><stop offset="0.3" stop-color="#ffd166"/>'
+            f'<stop offset="0.55" stop-color="#7ddf64"/><stop offset="0.8" stop-color="#59c2ff"/>'
+            f'<stop offset="1" stop-color="#b78aff"/></linearGradient></defs>')
+
+    r_o, r_i = s * 0.42, s * 0.31
+    if fx == "cloth":
+        body = (f'<circle cx="{c}" cy="{c}" r="{r_o - 2}" fill="none" stroke="{c2}" stroke-width="5" '
+                f'stroke-dasharray="4 2"/>'
+                f'<circle cx="{c}" cy="{c}" r="{r_i}" fill="#12161d" stroke="{c1}" stroke-width="1.5"/>')
+    elif fx == "iron":
+        body = (f'<polygon points="{octagon(c, c, r_o)}" fill="url(#g{i})" stroke="{c1}" stroke-width="2"/>'
+                f'<polygon points="{octagon(c, c, r_i)}" fill="#12161d"/>')
+    elif fx == "bronze":
+        studs = "".join(f'<circle cx="{c + (r_o - 1) * dx}" cy="{c + (r_o - 1) * dy}" r="2.4" fill="{c1}"/>'
+                        for dx, dy in ((0.71, 0.71), (-0.71, 0.71), (0.71, -0.71), (-0.71, -0.71)))
+        body = (f'<circle cx="{c}" cy="{c}" r="{r_o}" fill="url(#g{i})" stroke="{c2}" stroke-width="2"/>'
+                f'{studs}<circle cx="{c}" cy="{c}" r="{r_i}" fill="#12161d"/>')
+    elif fx == "silver":
+        d = r_o + 2
+        body = (f'<polygon points="{c},{c - d} {c + d},{c} {c},{c + d} {c - d},{c}" fill="url(#g{i})" '
+                f'stroke="#f2f6fb" stroke-width="1.5" style="{gl}"/>'
+                f'<polygon points="{c},{c - r_i - 2} {c + r_i + 2},{c} {c},{c + r_i + 2} {c - r_i - 2},{c}" '
+                f'fill="#12161d"/>')
+    elif fx == "gold":
+        body = (f'<polygon points="{hexagon(c, c, r_o)}" fill="url(#g{i})" stroke="{c1}" '
+                f'stroke-width="2" style="{gl}"/>'
+                f'<polygon points="{hexagon(c, c, r_i)}" fill="#12161d"/>')
+    elif fx == "glass":
+        body = (f'<polygon points="{hexagon(c, c, r_o)}" fill="{c1}" fill-opacity="0.3" '
+                f'stroke="{c1}" stroke-width="2" style="{gl}"/>'
+                f'<ellipse cx="{c - s * 0.1}" cy="{c - s * 0.14}" rx="{s * 0.16}" ry="{s * 0.07}" '
+                f'fill="#ffffff" fill-opacity="0.22" transform="rotate(-30 {c - s * 0.1} {c - s * 0.14})"/>'
+                f'<polygon points="{hexagon(c, c, r_i)}" fill="#12161d" fill-opacity="0.7"/>')
+    elif fx == "amethyst":
+        body = (f'<polygon points="{star8(c, c, r_o + 2, r_o * 0.72)}" fill="url(#g{i})" '
+                f'stroke="{c1}" stroke-width="1.5" style="{gl}"/>'
+                f'<polygon points="{octagon(c, c, r_i)}" fill="#12161d"/>')
+    elif fx == "jade":
+        q = r_o * 2
+        body = (f'<rect x="{c - r_o}" y="{c - r_o}" width="{q}" height="{q}" rx="{s * 0.14}" '
+                f'fill="url(#g{i})" stroke="#ffffff" stroke-width="1.2" style="{gl}"/>'
+                f'<rect x="{c - r_i}" y="{c - r_i}" width="{r_i * 2}" height="{r_i * 2}" rx="{s * 0.09}" '
+                f'fill="#12161d"/>')
+    elif fx == "stormjade":
+        zig = (f'<polyline points="{s*0.13},{s*0.18} {s*0.2},{s*0.3} {s*0.15},{s*0.3} {s*0.22},{s*0.44}" '
+               f'fill="none" stroke="#dff1ff" stroke-width="2" stroke-linecap="round" style="{gl}"/>'
+               f'<polyline points="{s*0.87},{s*0.56} {s*0.8},{s*0.68} {s*0.85},{s*0.68} {s*0.78},{s*0.82}" '
+               f'fill="none" stroke="#dff1ff" stroke-width="2" stroke-linecap="round" style="{gl}"/>')
+        body = (f'<polygon points="{octagon(c, c, r_o)}" fill="url(#g{i})" stroke="{c1}" '
+                f'stroke-width="2" style="{gl}"/>'
+                f'<polygon points="{octagon(c, c, r_i)}" fill="#12161d"/>{zig}')
+    else:  # dao 飞升
+        body = (f'<circle cx="{c}" cy="{c}" r="{r_o - 1}" fill="none" stroke="url(#rb)" '
+                f'stroke-width="5" style="{gl}"/>'
+                f'<circle cx="{c}" cy="{c}" r="{r_i}" fill="#12161d" stroke="#ffd166" stroke-width="1.5"/>')
+        txt = txt.replace(f'fill="{c1}"', 'fill="#ffffff"')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{s}" height="{s}" '
+            f'viewBox="0 0 {s} {s}">{defs}{body}{txt}</svg>')
+
+
+def ensure_realm_medals(px=MEDAL_PX, bg="#171b22"):
+    """十境界徽章 PNG 缓存，返回 {境界名: 路径}。渲不了则空，调用方回退手绘。"""
+    import time as _time
+    missing = [i for i in range(len(REALM_STYLE)) if not realm_medal_path(i, px).exists()]
+    if missing:
+        browser = next((b for b in _ICON_BROWSERS if Path(b).exists()), None)
+        if browser:
+            try:
+                EMOJI_CACHE.mkdir(parents=True, exist_ok=True)
+                n = len(REALM_STYLE)
+                cells = "".join(
+                    f'<div style="position:absolute;left:{j * px}px;top:0">{_medal_svg(j, px)}</div>'
+                    for j in range(n))
+                page = (f'<!doctype html><meta charset="utf-8">'
+                        f'<body style="margin:0;background:{bg}">{cells}</body>')
+                mhtml = EMOJI_CACHE / "_medals.html"
+                mpng = EMOJI_CACHE / "_medals.png"
+                with open(mhtml, "w", encoding="utf-8") as f:
+                    f.write(page)
+                if mpng.exists():
+                    mpng.unlink()
+                flags = 0x08000000 if os.name == "nt" else 0
+                subprocess.run([
+                    browser, "--headless", "--disable-gpu", "--hide-scrollbars",
+                    f"--screenshot={mpng}", f"--window-size={n * px},{px}",
+                    f"--default-background-color={bg.lstrip('#')}", mhtml.as_uri(),
+                ], capture_output=True, timeout=60, creationflags=flags)
+                for _ in range(20):
+                    if mpng.exists() and mpng.stat().st_size > 100:
+                        break
+                    _time.sleep(0.3)
+                if mpng.exists():
+                    import tkinter as tk
+                    root = getattr(tk, "_default_root", None)
+                    own = root is None
+                    if own:
+                        root = tk.Tk()
+                        root.withdraw()
+                    try:
+                        atlas = tk.PhotoImage(master=root, file=str(mpng))
+                        for j in range(n):
+                            if (j + 1) * px <= atlas.width():
+                                atlas.write(str(realm_medal_path(j, px)), format="png",
+                                            from_coords=(j * px, 0, (j + 1) * px, px))
+                    finally:
+                        if own:
+                            root.destroy()
+            except Exception:
+                pass
+    return {REALM_STYLE[j][0]: realm_medal_path(j, px)
+            for j in range(len(REALM_STYLE)) if realm_medal_path(j, px).exists()}

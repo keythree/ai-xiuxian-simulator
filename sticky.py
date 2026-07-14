@@ -274,6 +274,19 @@ def slot_status(task, ft, now, activity):
 
 
 def draw_medal(parent, realm, c1, c2, size=40):
+    """境界徽章：十境界各一款（SVG 渲染缓存），渲不出来回退手绘八边形。"""
+    try:
+        p = core.ensure_realm_medals().get(realm[:2])
+        if p:
+            img = tk.PhotoImage(file=str(p))
+            f = max(1, round(img.width() / size))
+            if f > 1:
+                img = img.subsample(f)
+            lb = tk.Label(parent, image=img, bg=C["card"])
+            lb._img = img
+            return lb
+    except Exception:
+        pass
     cv = tk.Canvas(parent, width=size, height=size, bg=C["card"], highlightthickness=0)
     k = 0.29 * size
     pts = [k, 1, size - k, 1, size - 1, k, size - 1, size - k,
@@ -687,28 +700,50 @@ class Sticky:
         bsb = tk.Scrollbar(bwrap, orient="vertical", command=bcv.yview, width=8)
         binner = tk.Frame(bcv, bg=C["bg"])
         binner.bind("<Configure>", lambda e: bcv.configure(scrollregion=bcv.bbox("all")))
-        bcv.create_window((0, 0), window=binner, anchor="nw")
+        bwin = bcv.create_window((2, 0), window=binner, anchor="nw")
+        bcv.bind("<Configure>", lambda e: bcv.itemconfigure(bwin, width=max(e.width - 4, 50)))
         bcv.configure(yscrollcommand=bsb.set)
-        bcv.pack(side="left", fill="both", expand=True)
         bsb.pack(side="right", fill="y")
+        bcv.pack(side="left", fill="both", expand=True)
 
         def _bwheel(e):
             d = e.delta if core.IS_MAC else e.delta // 120
             bcv.yview_scroll(-1 * d, "units")
             return "break"
 
-        def _badge_row(ico, bname, bdesc, fg, name_fg=None):
-            row = tk.Frame(binner, bg=C["bg"])
-            row.pack(fill="x", pady=1)
-            w1 = tk.Label(row, text=ico, bg=C["bg"], fg=fg, font=(EMOJI, 13),
-                          width=2, anchor="w")
-            w1.pack(side="left", padx=(4, 2))
-            w2 = tk.Label(row, text=bname, bg=C["bg"], fg=name_fg or fg, font=(FONT, 9, "bold"),
-                          width=9, anchor="w")
-            w2.pack(side="left", padx=(0, 4))
-            w3 = tk.Label(row, text=bdesc, bg=C["bg"], fg=C["dim"], font=(FONT, 8), anchor="w")
-            w3.pack(side="left")
-            for w in (row, w1, w2, w3):
+        # 两列卡片图鉴（一排两个，够大够清晰）
+        binner.grid_columnconfigure(0, weight=1, uniform="bcol")
+        binner.grid_columnconfigure(1, weight=1, uniform="bcol")
+        self._bcard_i = 0
+
+        try:
+            _bicons = core.ensure_emoji_icons([it[3] for it in blist if len(it) > 3])
+        except Exception:
+            _bicons = {}
+        self._badge_imgs = []
+
+        def _badge_card(ico, bname, bdesc, fg, border=None, kind_txt=""):
+            r, c = divmod(self._bcard_i, 2); self._bcard_i += 1
+            card = tk.Frame(binner, bg=C["card"], highlightthickness=1,
+                            highlightbackground=border or C["line"])
+            card.grid(row=r, column=c, sticky="nsew", padx=3, pady=3)
+            img = None
+            if ico in _bicons:
+                try:
+                    img = tk.PhotoImage(file=str(_bicons[ico]))
+                    self._badge_imgs.append(img)
+                except Exception:
+                    img = None
+            ico_w = (tk.Label(card, image=img, bg=C["card"]) if img else
+                     tk.Label(card, text=ico, bg=C["card"], fg=fg, font=(EMOJI, 16)))
+            ws = [card, ico_w,
+                  tk.Label(card, text=bname, bg=C["card"], fg=fg, font=(FONT, 10, "bold")),
+                  tk.Label(card, text=kind_txt, bg=C["card"], fg=C["dimmer"], font=(FONT, 7)),
+                  tk.Label(card, text=bdesc, bg=C["card"], fg=C["dim"], font=(FONT, 8),
+                           wraplength=116, justify="center")]
+            ws[1].pack(pady=(4, 0) if img else (8, 0)); ws[2].pack(); ws[3].pack()
+            ws[4].pack(pady=(2, 8), padx=4)
+            for w in ws:
                 w.bind("<MouseWheel>", _bwheel)
 
         unlocked = set()
@@ -721,11 +756,15 @@ class Sticky:
             fg = ("#ff8c5a" if bkind == "仙缘" else
                   "#c792ea" if bkind == "隐藏" else
                   "#7fd8d4" if bkind in ("奇遇", "首次") else C["amber"])
-            _badge_row(item[3] if len(item) > 3 else "·", bname, bdesc, fg)
+            border = ("#ff8c5a" if bkind == "仙缘" else
+                      "#6c3fc5" if bkind == "隐藏" else None)
+            _badge_card(item[3] if len(item) > 3 else "·", bname, bdesc, fg,
+                        border=border, kind_txt=f"{bkind}机缘")
         for bname, bkind in all_map.items():
             if bname in unlocked:
                 continue
-            _badge_row("？", "？？？", f"未悟 · {bkind}机缘，条件自行参悟", C["dimmer"])
+            _badge_card("？", "？？？", "机缘未至，条件自行参悟", C["dimmer"],
+                        kind_txt=f"未悟 · {bkind}")
         bcv.bind("<MouseWheel>", _bwheel)
         binner.bind("<MouseWheel>", _bwheel)
 

@@ -18,3 +18,4 @@ __pycache__/
 # 内部设计文档（规则黑箱）
 RULES-内部.md
 DESIGN.md
+.emoji_cache/
