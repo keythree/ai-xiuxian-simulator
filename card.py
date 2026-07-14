@@ -135,14 +135,15 @@ def main():
     def medal_html(b):
         n, t = b[0], b[1]
         ico = b[3] if len(b) > 3 else "🔸"
-        cls = "hid" if t == "隐藏" else ("mile" if t == "里程碑" else "rare")
+        cls = ("xian" if t == "仙缘" else
+               "hid" if t == "隐藏" else ("mile" if t == "里程碑" else "rare"))
         return f'<div class="bm {cls}"><div class="bi">{ico}</div><div class="bn">{n}</div></div>'
 
     blist = state["badges"]
     counter = (f'<div class="bm more"><div class="bi">…</div>'
                f'<div class="bn">{len(blist)} / {core.TOTAL_BADGES}</div></div>')
     if len(blist) > 15:  # 勋章墙最多两行：稀有优先展示，其余收进收集进度（黑箱钩子）
-        order = {"隐藏": 0, "奇遇": 1, "首次": 1, "里程碑": 2}
+        order = {"仙缘": 0, "隐藏": 1, "奇遇": 2, "首次": 2, "里程碑": 3}
         shown_set = {tuple(b) for b in sorted(blist, key=lambda b: order.get(b[1], 3))[:15]}
         shown = [b for b in blist if tuple(b) in shown_set]
         badges = "".join(medal_html(b) for b in shown) + counter
@@ -209,6 +210,8 @@ h3{{margin:20px 0 12px;font-size:20px;color:#8a8f98;letter-spacing:6px;font-weig
 .bi{{width:50px;height:50px;margin:0 auto;border-radius:50%;font-size:23px;
   display:flex;align-items:center;justify-content:center;border:2px solid #3a4150;
   background:radial-gradient(circle at 32% 28%, #242b3a, #10141d)}}
+.bm.xian .bi{{border-color:#ff8c5a;box-shadow:0 0 18px rgba(255,140,90,.6)}}
+.bm.xian .bn{{color:#ff8c5a}}
 .bm.hid .bi{{border-color:#8a5cd6;box-shadow:0 0 15px rgba(138,92,214,.5)}}
 .bm.mile .bi{{border-color:#b8912f;box-shadow:0 0 10px rgba(255,209,102,.3)}}
 .bm.rare .bi{{border-color:#3e9e9a;box-shadow:0 0 10px rgba(127,216,212,.35)}}

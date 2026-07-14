@@ -132,7 +132,8 @@ def main():
                   if w_start.strftime("%Y-%m-%d") <= blog.get(b[0], "") <= w_end.strftime("%Y-%m-%d")]
     if new_badges:
         nb = "".join(
-            f'<span class="nb {"hid" if b[1] == "隐藏" else ""}">{b[3] if len(b) > 3 else ""} {b[0]}</span>'
+            f'<span class="nb {"xian" if b[1] == "仙缘" else ("hid" if b[1] == "隐藏" else "")}">'
+            f'{b[3] if len(b) > 3 else ""} {b[0]}</span>'
             for b in new_badges[:4])
         if len(new_badges) > 4:
             nb += f'<span class="nb" style="opacity:.6">+{len(new_badges) - 4}</span>'
@@ -174,6 +175,7 @@ body{{width:1080px;height:1080px;background:
 .nb{{font-size:20px;font-family:KaiTi,"Kaiti SC","Microsoft YaHei","PingFang SC";color:#ffd166;border:1px solid #4a3f22;
   background:rgba(255,209,102,.07);border-radius:999px;padding:7px 20px}}
 .nb.hid{{color:#c792ea;border-color:#4a3566;box-shadow:0 0 12px rgba(108,63,197,.3)}}
+.nb.xian{{color:#ff8c5a;border-color:#7a4630;box-shadow:0 0 14px rgba(255,140,90,.35)}}
 .dim{{color:#5c6773;font-size:18px;text-align:center}}
 .foot{{margin-top:auto;display:flex;justify-content:space-between;align-items:baseline;color:#5c6773;font-size:18px}}
 .foot .slogan{{font-family:KaiTi,"Kaiti SC","Microsoft YaHei","PingFang SC";font-size:21px;color:#8a8f98;letter-spacing:3px}}

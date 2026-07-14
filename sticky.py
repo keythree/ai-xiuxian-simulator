@@ -29,6 +29,9 @@ C = dict(bg="#0e1116", card="#171b22", card2="#1d232c", line="#2a323d",
          green="#3fb950", blue="#58a6ff", amber="#e3b341", done="#556070")
 SPIN_FRAMES = "◐◓◑◒"
 
+# 分享按钮图标：20px 曲线箭头（Segoe MDL2 EE35，系统分享/转发造型）
+SHARE_ICON_B64 = ("iVBORw0KGgoAAAANSUhEUgAAAA4AAAAOCAYAAAAfSC3RAAAB4klEQVR4nHWSTWhTQRDHZ3Ze0pYKflLBUPygXjwIXhRFqJtaKQGrIpFCT3pW8CIePMSevHirp14EBQ9P8JCGWLzESC0UUSIeBAUPfc/vj5cENcHn7sisJrEhndPu/vnNzM5/ANYIBkBmwJW8vhTeG9vs3jinWrrqCTEg+FkFVwERYRck7KPKrfFBxBnLuQ7cAfws9RKCgp4NC/rFR390XSsxdqrklGR058r4YDX6laj/MOhZoqj5ub5+YOg2KdxhkyqTWjwc4f/Q+2J6ihScjw1vtAaQRUTJzooBg+Gt/WPhh8aN4cmHF7AFBQV9vT+pThtrrzQadgkS0BSOmKjeMLUNAzSnFOwhNhNDT8qfXMUwnz5u0d78+oVH9p0tV7v/GM6nrwHyyW+1+NDe6cVI/ugGYdFeBAuXBXpVnOgToVQa9aSbIK9nAXgqju3Bv5B0KL27KeImj7wlAXYvL8QiHNFlAzDDCLBCSe/AzlPlqu9nqTVAZ3Iwr58pa86lTujn7vGfCF3eSsL2AsiFgV8ahdMCvL6/nBA/V3nbBbUrhoWjIwy/Kx5hdlumVOy9hKujbcfbvD6W7FNzRPi4/tMsbG9uuYNn7pq1QAcJnJosPah9V/st8zsCyDyN3riJu73tEX8AA7PtY8c2pXIAAAAASUVORK5CYII=")
+
 
 # ── 今日隐藏 ──
 def load_dismissed():
@@ -133,8 +136,37 @@ def load_task_activity():
         return None
 
 
+def alive_session_ids():
+    """Claude Code 会话注册表里进程仍存活的 sessionId 集合；探测不了返回 None 退回旧逻辑。"""
+    if not core.IS_WIN:
+        return None
+    try:
+        import glob as _g, ctypes
+        ids = set()
+        k32 = ctypes.windll.kernel32
+        for f in _g.glob(str(Path.home() / ".claude" / "sessions" / "*.json")):
+            try:
+                with open(f, encoding="utf-8") as fp:
+                    d = json.load(fp)
+                pid, sid = int(d.get("pid", 0)), d.get("sessionId")
+                if not pid or not sid:
+                    continue
+                h = k32.OpenProcess(0x1000, False, pid)
+                if h:
+                    code = ctypes.c_ulong()
+                    k32.GetExitCodeProcess(h, ctypes.byref(code))
+                    k32.CloseHandle(h)
+                    if code.value == 259:  # STILL_ACTIVE
+                        ids.add(sid)
+            except Exception:
+                continue
+        return ids
+    except Exception:
+        return None
+
+
 def load_live_sessions(limit=10):
-    """历练动态：今天活跃的亲手会话 + 状态。"""
+    """历练动态：今天活跃的亲手会话 + 状态。运行中=文件新鲜且进程真活着。"""
     try:
         import glob, time
         idx = {r["session"]: r for r in read_ledger()}
@@ -145,6 +177,7 @@ def load_live_sessions(limit=10):
             pending = {}
         now_ts = time.time()
         today0 = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        alive = alive_session_ids()
         rows = []
         for path in glob.glob(str(core.PROJECTS_DIR / "*" / "*.jsonl")):
             name = os.path.basename(path)
@@ -161,9 +194,10 @@ def load_live_sessions(limit=10):
             if fm.startswith("[定时任务]"):
                 continue
             age = now_ts - mt
-            if sid in pending:
+            proc_alive = (alive is None) or (sid in alive)
+            if sid in pending and proc_alive:
                 st, info = "pending", pending[sid].get("ts", "")
-            elif age < 120:
+            elif age < 120 and proc_alive:
                 st, info = "running", ""
             else:
                 st, info = "idle", datetime.fromtimestamp(mt).strftime("%H:%M")
@@ -367,17 +401,27 @@ class Sticky:
         self.clock_lbl = tk.Label(hd, textvariable=self.clock_var, bg=C["card2"], fg=C["dim"],
                                   font=(MONO, 10))
         self.clock_lbl.pack(side="left", padx=8)
-        for txt, cmd, fg in [("✕", self.close, "#ff7b72"), ("⤴", self.make_card, C["amber"]),
-                             ("—", self.toggle_fold, C["dim"]), ("顶", self.toggle_top, C["dim"]),
+        try:
+            self._share_img = tk.PhotoImage(data=SHARE_ICON_B64)
+        except Exception:
+            self._share_img = None
+        for txt, cmd, fg in [("✕", self.close, "#ff7b72"), ("＿", self.toggle_fold, C["dim"]),
+                             ("分享", self.card_menu, C["amber"]),
                              ("⟳", self.full_render, C["green"]), ("铃", self.toggle_notify, None)]:
-            if txt == "铃":
-                fg = C["amber"] if self._notify_on() else C["dimmer"]
-            b = tk.Label(hd, text=txt, bg=C["card2"], fg=fg, font=(FONT, 11), cursor="hand2")
+            if txt == "分享" and self._share_img:
+                b = tk.Label(hd, image=self._share_img, bg=C["card2"], cursor="hand2")
+            elif txt == "分享":
+                b = tk.Label(hd, text=txt, bg=C["card2"], fg=C["amber"],
+                             font=(FONT, 9, "bold"), cursor="hand2")
+            else:
+                if txt == "铃":
+                    fg = C["amber"] if self._notify_on() else C["dimmer"]
+                b = tk.Label(hd, text=txt, bg=C["card2"], fg=fg, font=(FONT, 11), cursor="hand2")
             b.pack(side="right", padx=5)
             b.bind("<Button-1>", lambda e, c=cmd: c())
-            if txt == "—":
+            if txt == "＿":
                 self.fold_btn = b
-            if txt == "⤴":
+            if txt == "分享":
                 self.card_btn = b
             if txt == "铃":
                 self.bell_btn = b
@@ -674,7 +718,9 @@ class Sticky:
             except (IndexError, TypeError):
                 continue
             unlocked.add(bname)
-            fg = "#c792ea" if bkind == "隐藏" else ("#7fd8d4" if bkind in ("奇遇", "首次") else C["amber"])
+            fg = ("#ff8c5a" if bkind == "仙缘" else
+                  "#c792ea" if bkind == "隐藏" else
+                  "#7fd8d4" if bkind in ("奇遇", "首次") else C["amber"])
             _badge_row(item[3] if len(item) > 3 else "·", bname, bdesc, fg)
         for bname, bkind in all_map.items():
             if bname in unlocked:
@@ -759,14 +805,29 @@ class Sticky:
             self.tabbar.pack(fill="x", padx=10, pady=(8, 0))
             self._apply_tab()
             if self.fold_btn:
-                self.fold_btn.config(text="—")
+                self.fold_btn.config(text="＿")
             self.full_render()
 
     # ── 功能按钮 ──
+    def card_menu(self):
+        m = tk.Menu(self.root, tearoff=0, bg=C["card2"], fg=C["txt"],
+                    activebackground=C["line"], activeforeground=C["txt"], font=(FONT, 9))
+        m.add_command(label="生成等级卡", command=self.make_card)
+        m.add_command(label="生成七日统计卡", command=self.make_weekly)
+        m.add_command(label="取消", command=m.unpost)
+        try:
+            m.tk_popup(self.root.winfo_pointerx(), self.root.winfo_pointery())
+        finally:
+            m.grab_release()
+
     def make_card(self):
         try:
-            self.card_btn.config(text="…", fg=C["dim"])
-            self.root.after(8000, lambda: self.card_btn.config(text="⤴", fg=C["amber"]))
+            if self._share_img:
+                self.card_btn.config(image="", text="…", fg=C["dim"])
+                self.root.after(8000, lambda: self.card_btn.config(image=self._share_img, text=""))
+            else:
+                self.card_btn.config(text="…")
+                self.root.after(8000, lambda: self.card_btn.config(text="分享"))
         except Exception:
             pass
         spawn_tool("card.py", "--open")

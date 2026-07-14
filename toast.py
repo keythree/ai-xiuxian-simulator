@@ -57,6 +57,13 @@ def main():
             fg, fnt = "#ffd166", (FONT, 13, "bold")
         tk.Label(frame, text=e, font=fnt, fg=fg, bg="#0b0e14").pack(anchor="w", pady=2)
 
+    # 右下角「不再弹出」小按钮（护法⚠警报不受总开关控制，故照常显示按钮也无妨）
+    btn_row = tk.Frame(frame, bg="#0b0e14")
+    btn_row.pack(fill="x", pady=(6, 0))
+    mute_lbl = tk.Label(btn_row, text="不再弹出", font=(FONT, 8), fg="#4a5160",
+                        bg="#0b0e14", cursor="hand2")
+    mute_lbl.pack(side="right")
+
     root.update_idletasks()
     w, h = root.winfo_width(), root.winfo_height()
     sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -74,8 +81,40 @@ def main():
             root.after(30, fade_out, alpha)
         else:
             root.destroy()
+
+    job = {}
+
+    def mute(_e=None):
+        try:
+            p = Path(__file__).resolve().parent / "config.json"
+            cfg = {}
+            if p.exists():
+                with open(p, encoding="utf-8") as f:
+                    cfg = json.load(f)
+            cfg["notify_enabled"] = False
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+        for wd in frame.winfo_children():
+            wd.destroy()
+        tk.Label(frame, text="🔕 已关闭弹窗提醒", font=(FONT, 12, "bold"), fg="#ffd166",
+                 bg="#0b0e14").pack(anchor="w")
+        tk.Label(frame, text="想恢复：点任务贴纸右上角的铃铛", font=(FONT, 9), fg="#8a8f98",
+                 bg="#0b0e14").pack(anchor="w", pady=(2, 0))
+        root.update_idletasks()
+        w2, h2 = root.winfo_width(), root.winfo_height()
+        root.geometry(f"+{sw - w2 - 24}+{sh - h2 - 72}")
+        if job.get("id"):
+            try:
+                root.after_cancel(job["id"])
+            except Exception:
+                pass
+        job["id"] = root.after(3500, fade_out)
+
+    mute_lbl.bind("<Button-1>", mute)
     fade()
-    root.after(4200, fade_out)
+    job["id"] = root.after(4200, fade_out)
     root.mainloop()
 
 if __name__ == "__main__":

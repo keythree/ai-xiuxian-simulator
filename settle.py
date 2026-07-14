@@ -96,7 +96,7 @@ def diff_events(old, new):
     for b in new["badges"]:
         if b[0] not in old_badges:
             ico = b[3] + " " if len(b) > 3 else ""
-            events.append(f"得{b[1]}机缘 · {ico}{b[0]}")
+            events.append(f"得{b[1]}机缘 · {ico}{b[0]} +{core.badge_reward(b[0], b[1])}灵气")
     return events
 
 def pop(events):

@@ -503,6 +503,9 @@ def compute_state(ledger):
     streak = calc_streak(day_xp)
     badges = compute_badges(ledger, levels, day_xp, t_lv, streak)
     update_badge_log(badges)
+    # 机缘灵气入账（一次性奖励，随后重算修为）
+    total_xp += sum(badge_reward(b[0], b[1]) for b in badges)
+    t_lv, t_in, t_need = total_xp_to_level(total_xp)
     buff_left = 0
     inst = install_date()
     if inst:
@@ -541,8 +544,23 @@ ALL_BADGES = {
     "闭关一月": "里程碑", "初入道门": "里程碑", "小试牛刀": "里程碑", "轻车熟路": "里程碑",
     "初窥门径": "里程碑", "一专多能": "里程碑", "勤学苦练": "里程碑", "渐入佳境": "里程碑",
     "分身有术": "奇遇", "斩妖除魔": "奇遇", "首战告捷": "奇遇",
+    "闻道": "奇遇", "初露锋芒": "奇遇", "紫气盈门": "奇遇", "二日不辍": "里程碑",
+    "五方问道": "隐藏", "早晚功课": "隐藏",
+    "周天圆满": "仙缘", "岁月成碑": "仙缘", "万象归一": "仙缘",
+    "亿字真经": "仙缘", "道行如山": "仙缘",
 }
 TOTAL_BADGES = len(ALL_BADGES)
+
+# 机缘灵气（一次性入账；前期多而小、后期少而大，数值属黑箱见 RULES-内部.md）
+BADGE_REWARD_KIND = {"奇遇": 30, "里程碑": 60, "隐藏": 120, "仙缘": 500}
+BADGE_REWARD_OVERRIDE = {
+    "初入道门": 20, "首战告捷": 20, "闻道": 20, "二日不辍": 30, "勤学苦练": 40,
+    "小试牛刀": 40, "初窥门径": 40, "一日三省": 50, "开光": 50, "紫气盈门": 50,
+    "闭关一月": 100, "风雨无阻": 150, "千山踏遍": 300, "道心如铁": 300, "万法皆通": 300,
+}
+
+def badge_reward(name, kind):
+    return BADGE_REWARD_OVERRIDE.get(name, BADGE_REWARD_KIND.get(kind, 60))
 
 BADGE_LOG = OUT_DIR / "badge-log.json"
 
@@ -577,6 +595,10 @@ BADGE_ICONS = {
     "初入道门": "🚪", "首战告捷": "🎯", "开光": "✨", "一日三省": "💭",
     "渐入佳境": "📈", "小试牛刀": "🐂", "轻车熟路": "🐎", "初窥门径": "🔑",
     "一专多能": "🎭", "三足鼎立": "🏺", "勤学苦练": "📚",
+    "闻道": "🍃", "初露锋芒": "🌟", "紫气盈门": "💜", "二日不辍": "🌿",
+    "五方问道": "🧭", "早晚功课": "🕰",
+    "周天圆满": "🌈", "岁月成碑": "🗿", "万象归一": "🪐",
+    "亿字真经": "📜", "道行如山": "⛩",
 }
 
 def compute_badges(ledger, levels, day_xp, total_level, streak=0):
@@ -682,6 +704,56 @@ def compute_badges(ledger, levels, day_xp, total_level, streak=0):
                 badges.append(("明察秋毫", "隐藏", "护法初次察觉阵法停转"))
     except OSError:
         pass
+    # ---- 新手期追加（前三日高密度小额正反馈）----
+    if inst and any(r["day"] == inst for r in manual):
+        badges.append(("闻道", "奇遇", "入门当日即开修"))
+    if streak >= 2:
+        badges.append(("二日不辍", "里程碑", "连续修行两日"))
+    if any(r["diff"] in ("A", "S") for r in manual):
+        badges.append(("初露锋芒", "奇遇", "初次完成 A 级历练"))
+    if len({r["job"] for r in manual}) >= 3:
+        badges.append(("五方问道", "隐藏", "历练涉足三道"))
+    dh_day = defaultdict(set)
+    for r in manual:
+        for s in r.get("dh", []):
+            try:
+                d, h = s.split(" ")
+                dh_day[d].add(int(h))
+            except ValueError:
+                pass
+    if any(hs & set(range(6, 12)) and hs & set(range(18, 24)) for hs in dh_day.values()):
+        badges.append(("早晚功课", "隐藏", "同日早晚皆有修行"))
+    if inst:
+        try:
+            from datetime import timedelta
+            d0 = datetime.strptime(inst, "%Y-%m-%d").date()
+            first3 = [(d0 + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(3)]
+            if datetime.now(LOCAL_TZ).date() >= d0 + timedelta(days=2) and \
+               all(day_xp.get(d, 0) > 0 for d in first3):
+                badges.append(("紫气盈门", "奇遇", "新手期三日全勤"))
+        except ValueError:
+            pass
+    # ---- 仙缘（长线大器，晚成而丰厚）----
+    all_hours = set()
+    for r in manual:
+        all_hours.update(r.get("hours", []))
+    if len(all_hours) >= 24:
+        badges.append(("周天圆满", "仙缘", "十二时辰皆曾修行"))
+    active_days = sorted(d for d, v in day_xp.items() if v > 0)
+    if active_days:
+        try:
+            span = (datetime.strptime(active_days[-1], "%Y-%m-%d")
+                    - datetime.strptime(active_days[0], "%Y-%m-%d")).days
+            if span >= 180:
+                badges.append(("岁月成碑", "仙缘", "道行跨越半载"))
+        except ValueError:
+            pass
+    if min(levels.values()) >= 20:
+        badges.append(("万象归一", "仙缘", "八道皆入金丹"))
+    if sum(r.get("out_tokens", 0) for r in ledger) >= 100_000_000:
+        badges.append(("亿字真经", "仙缘", "累计炼化灵石一亿"))
+    if len(active_days) >= 300:
+        badges.append(("道行如山", "仙缘", "累计修行三百日"))
     return [(n, k, d, BADGE_ICONS.get(n, "🔸")) for n, k, d in badges]
 
 # ---------- 台账读写 ----------
@@ -731,7 +803,7 @@ def render_dashboard(state, ledger):
         f'<div class="dcol"><div class="dbar" style="height:{max(4, round(day_xp[d]/maxd*90))}px"></div><div class="dlab">{d[5:]}</div></div>'
         for d in days)
     badge_html = "".join(
-        f'<div class="badge b-{"hid" if b[1]=="隐藏" else "norm"}">'
+        f'<div class="badge b-{"xian" if b[1]=="仙缘" else ("hid" if b[1]=="隐藏" else "norm")}">'
         f'<div class="badge-ico">{b[3] if len(b) > 3 else "🔸"}</div>'
         f'<div class="badge-name">{b[0]}</div><div class="badge-type">{b[1]}机缘</div>'
         f'<div class="badge-desc">{b[2]}</div></div>'
@@ -770,10 +842,12 @@ h2{{font-size:14px;color:#8a8f98;letter-spacing:3px;margin:32px 0 12px;font-weig
 .badges{{display:flex;gap:12px;flex-wrap:wrap}}
 .badge{{background:#11151f;border:1px solid #2a3040;border-radius:10px;padding:12px 16px;min-width:130px;text-align:center}}
 .b-hid{{border-color:#6c3fc5;box-shadow:0 0 12px rgba(108,63,197,.35)}}
+.b-xian{{border-color:#ff8c5a;box-shadow:0 0 16px rgba(255,140,90,.45)}}
 .b-locked{{opacity:.32;border-style:dashed}}
 .badge-ico{{font-size:30px;line-height:1.2;margin-bottom:4px}}
 .badge-name{{font-size:16px;font-weight:700;color:#ffd166}}
 .b-hid .badge-name{{color:#c792ea}}
+.b-xian .badge-name{{color:#ff8c5a}}
 .badge-type{{font-size:10px;color:#5c6773;margin:2px 0 6px}}
 .badge-desc{{font-size:12px;color:#8a8f98}}
 .chart{{display:flex;gap:10px;align-items:flex-end;height:120px;padding:10px;background:#11151f;border-radius:10px;border:1px solid #1c2230}}
