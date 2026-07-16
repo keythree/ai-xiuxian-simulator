@@ -40,6 +40,25 @@ def _sample_roots(name, detect_path):
     return [(Path(sp), pat) for pat in pats]
 
 
+import re
+
+_CRED_NAMES = re.compile(r"(?i)(auth|token|cred|secret|password|apps\.json|hosts\.json|\.pem$|\.key$)")
+_CRED_CONTENT = re.compile(
+    r"(?i)(oauth_token|access[_-]?token|refresh[_-]?token|api[_-]?key|client[_-]?secret"
+    r"|gh[oupsr]_[A-Za-z0-9]{16}|sk-[A-Za-z0-9\-_]{16}|-----BEGIN)")
+
+
+def _looks_credential(f):
+    """凭据文件绝不入包：文件名和内容双重排查，读不了的也不收。"""
+    if _CRED_NAMES.search(f.name):
+        return True
+    try:
+        head = f.read_bytes()[:8192].decode("utf-8", errors="replace")
+    except OSError:
+        return True
+    return bool(_CRED_CONTENT.search(head))
+
+
 def _collect(roots):
     files = []
     for root, pat in roots:
@@ -50,7 +69,7 @@ def _collect(roots):
                 if not f.is_file():
                     continue
                 st = f.stat()
-                if 50 < st.st_size <= MAX_MB * 1024 * 1024:
+                if 50 < st.st_size <= MAX_MB * 1024 * 1024 and not _looks_credential(f):
                     files.append((st.st_mtime, f))
         except OSError:
             continue
@@ -86,9 +105,10 @@ def main():
                 manifest.append(f"{name}: 探测到在用，但没找到会话日志文件（可能存在云端或别的位置）")
                 print(f"· {name}：探测到在用，但没自动找到日志，接入时可能要人工看一眼")
                 continue
-            for f in samples:
-                z.write(f, f"{name}/{f.name}")
-                manifest.append(f"{name}/{f.name}  <-  {f}")
+            for j, f in enumerate(samples):
+                arc = f"{name}/{j}_{f.name}"  # 加序号防同名互相覆盖
+                z.write(f, arc)
+                manifest.append(f"{arc}  <-  {f}")
                 packed += 1
             print(f"· {name}：打包了最近 {len(samples)} 个会话文件")
         z.writestr("清单.txt", "\n".join(manifest) + "\n")
