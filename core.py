@@ -430,6 +430,17 @@ else:
 UNSUPPORTED_TOOLS += [
     ("Trae", _APP_SUPPORT / "Trae"),
 ]
+
+# JetBrains 系（IDEA 等，AI Assistant/Junie/Copilot 走插件）
+if IS_WIN:
+    _LOCAL_APP = Path(os.environ.get("LOCALAPPDATA", ""))
+else:
+    _LOCAL_APP = Path.home() / ".config"
+UNSUPPORTED_TOOLS += [
+    ("JetBrains IDE (AI Assistant/Junie)", _APP_SUPPORT / "JetBrains"),
+    ("Junie", Path.home() / ".junie"),
+    ("GitHub Copilot (JetBrains)", _LOCAL_APP / "github-copilot"),
+]
 if IS_WIN:
     _VSC_STORE = Path(os.environ.get("APPDATA", "")) / "Code" / "User" / "globalStorage"
 else:

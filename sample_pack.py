@@ -28,6 +28,10 @@ def _sample_roots(name, detect_path):
         t = Path(str(detect_path))
         return [(t / "User" / "workspaceStorage", "*/chatSessions/*.json"),
                 (t / "User" / "globalStorage", "*/*.json")]
+    if name == "JetBrains IDE (AI Assistant/Junie)":
+        j = Path(str(detect_path))
+        return [(j, "*/options/*ai*.xml"), (j, "*/options/*junie*.xml"),
+                (j, "*/aiAssistant/**/*.json"), (j, "*/junie/**/*.json*")]
     sp = str(detect_path)
     pats = ("**/*.jsonl", "**/*.json", "**/*.log")
     if "*" in sp:
