@@ -392,6 +392,92 @@ def parse_codex_session(fp):
         "days": sorted(days_active), "dh": sorted(dh_active),
     }
 
+COPILOT_DB = Path.home() / ".copilot" / "session-store.db"
+
+
+def parse_copilot_session(sid):
+    """GitHub Copilot CLI（v1.0.7x+，会话存 SQLite session-store.db）。sid=sessions.id。
+    表结构 2026-07 实机确认：turns(user_message/assistant_response/timestamp)、
+    assistant_usage_events(model/output_tokens/created_at)。任何异常返回空记录被过滤。"""
+    rec = {"session": f"copilot-{sid}", "src": "copilot-cli", "models": {},
+           "first_msg": "", "first_ts": None, "last_ts": None, "n_msgs": 0,
+           "out_tokens": 0, "tools": {}, "write_exts": [], "non_human": False,
+           "hours": [], "days": [], "dh": []}
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{COPILOT_DB.as_posix()}?mode=ro", uri=True)
+        hours, days, dh = set(), set(), set()
+
+        def note_ts(v):
+            if v in (None, ""):
+                return None
+            try:
+                if isinstance(v, (int, float)) or (isinstance(v, str) and v.replace(".", "", 1).isdigit()):
+                    x = float(v)
+                    if x > 1e12:
+                        x /= 1000.0
+                    dt = datetime.fromtimestamp(x, tz=timezone.utc).astimezone(LOCAL_TZ)
+                else:
+                    dt = datetime.fromisoformat(str(v).replace("Z", "+00:00")).astimezone(LOCAL_TZ)
+            except (ValueError, OSError, OverflowError):
+                return None
+            hours.add(dt.hour)
+            days.add(dt.strftime("%Y-%m-%d"))
+            dh.add(dt.strftime("%Y-%m-%d %H"))
+            return dt.isoformat()
+
+        for um, ar, ts in con.execute(
+                "select user_message, assistant_response, timestamp from turns "
+                "where session_id=? order by turn_index", (sid,)):
+            iso = note_ts(ts)
+            if iso:
+                rec["last_ts"] = iso
+                if rec["first_ts"] is None:
+                    rec["first_ts"] = iso
+            if um:
+                rec["n_msgs"] += 1
+                if not rec["first_msg"]:
+                    t = str(um).strip()
+                    if t.startswith("{"):
+                        try:
+                            obj = json.loads(t)
+                            t = str(obj.get("text") or obj.get("content") or t)
+                        except (json.JSONDecodeError, AttributeError):
+                            pass
+                    rec["first_msg"] = t[:300]
+            if ar:
+                rec["n_msgs"] += 1
+        for model, out_t, cts in con.execute(
+                "select model, output_tokens, created_at from assistant_usage_events "
+                "where session_id=?", (sid,)):
+            rec["out_tokens"] += int(out_t or 0)
+            key = f"copilot:{model or 'unknown'}"
+            rec["models"][key] = rec["models"].get(key, 0) + int(out_t or 0)
+            note_ts(cts)
+        if rec["first_ts"] is None:
+            row = con.execute("select created_at, updated_at from sessions where id=?",
+                              (sid,)).fetchone()
+            if row:
+                rec["first_ts"] = note_ts(row[0])
+                rec["last_ts"] = note_ts(row[1]) or rec["first_ts"]
+        con.close()
+        rec["hours"], rec["days"], rec["dh"] = sorted(hours), sorted(days), sorted(dh)
+    except Exception:
+        pass
+    return rec
+
+
+def _copilot_session_ids():
+    try:
+        import sqlite3
+        con = sqlite3.connect(f"file:{COPILOT_DB.as_posix()}?mode=ro", uri=True)
+        sids = [r[0] for r in con.execute("select id from sessions")]
+        con.close()
+        return sids
+    except Exception:
+        return []
+
+
 # ---------- 数据源自动发现 ----------
 def discover_sources():
     """返回 [(源名, 会话文件列表, 解析函数)]，自动识别本机装了哪些 AI 工具。"""
@@ -401,6 +487,10 @@ def discover_sources():
         sources.append(("claude-code", files, parse_session))
     if CODEX_DIR.exists():
         sources.append(("codex", list(CODEX_DIR.rglob("rollout-*.jsonl")), parse_codex_session))
+    if COPILOT_DB.exists():
+        sids = _copilot_session_ids()
+        if sids:
+            sources.append(("copilot-cli", sids, parse_copilot_session))
     # 新法器扩展：在此追加 detect + parser（拿到真实样本才写解析器，绝不赌格式）
     return sources
 
@@ -463,6 +553,8 @@ def detect_unsupported():
     import glob as _glob
     out = []
     for name, p in UNSUPPORTED_TOOLS:
+        if name == "GitHub Copilot CLI" and COPILOT_DB.exists():
+            continue  # 新版（SQLite 存储）已接入记账，只有旧版才提示交样本
         sp = str(p)
         if name not in out and (("*" in sp and _glob.glob(sp)) or ("*" not in sp and p.exists())):
             out.append(name)
