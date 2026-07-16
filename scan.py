@@ -50,7 +50,7 @@ def main():
     print(f"数据源: " + " · ".join(f"{k} ×{v}" for k, v in sorted(src_count.items())))
     extra = core.detect_unsupported()
     if extra:
-        print("发现尚未接入的法器: " + "、".join(extra) + "（GitHub 开 Issue 附脱敏会话样本，拿到当天接入）")
+        print("发现尚未接入的法器: " + "、".join(extra) + "（双击「③帮我接入新工具」自动打包样本，发出来很快接入）")
     print(f"机缘: {[b[0] for b in state['badges']]}")
     print(f"\n面板: {core.DASHBOARD_PATHS[1]}")
 

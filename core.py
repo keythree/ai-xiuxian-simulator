@@ -414,6 +414,21 @@ UNSUPPORTED_TOOLS = [
     ("Windsurf", Path.home() / ".windsurf"),
     ("OpenCode", Path.home() / ".opencode"),
     ("Aider", Path.home() / ".aider"),
+    ("Kilo CLI", Path.home() / ".kilocode"),
+    ("Goose", Path.home() / ".config" / "goose"),
+    ("CodeBuddy CLI", Path.home() / ".codebuddy"),
+    ("通义灵码 CLI", Path.home() / ".lingma"),
+]
+
+# 桌面 IDE 类（VS Code fork，各有独立数据目录）
+if IS_WIN:
+    _APP_SUPPORT = Path(os.environ.get("APPDATA", ""))
+elif IS_MAC:
+    _APP_SUPPORT = Path.home() / "Library" / "Application Support"
+else:
+    _APP_SUPPORT = Path.home() / ".config"
+UNSUPPORTED_TOOLS += [
+    ("Trae", _APP_SUPPORT / "Trae"),
 ]
 if IS_WIN:
     _VSC_STORE = Path(os.environ.get("APPDATA", "")) / "Code" / "User" / "globalStorage"
@@ -423,11 +438,24 @@ else:
 UNSUPPORTED_TOOLS += [
     ("Cline", _VSC_STORE / "saoudrizwan.claude-dev"),
     ("Roo Code", _VSC_STORE / "rooveterinaryinc.roo-cline"),
+    ("GitHub Copilot (VS Code)", Path.home() / ".vscode" / "extensions" / "github.copilot-*"),
+    ("Kilo Code (VS Code)", _VSC_STORE / "*kilo*"),
+    ("通义灵码 (VS Code)", _VSC_STORE / "*lingma*"),
+    ("CodeGeeX (VS Code)", _VSC_STORE / "*codegeex*"),
+    ("文心快码 Comate (VS Code)", _VSC_STORE / "*comate*"),
+    ("CodeBuddy (VS Code)", _VSC_STORE / "*codebuddy*"),
+    ("CodeBuddy (VS Code)", _VSC_STORE / "*coding-copilot*"),
 ]
 
 def detect_unsupported():
-    """返回本机在用但尚未接入的 AI 工具名列表。"""
-    return [name for name, p in UNSUPPORTED_TOOLS if p.exists()]
+    """返回本机在用但尚未接入的 AI 工具名列表（路径含 * 时按通配匹配，重名去重）。"""
+    import glob as _glob
+    out = []
+    for name, p in UNSUPPORTED_TOOLS:
+        sp = str(p)
+        if name not in out and (("*" in sp and _glob.glob(sp)) or ("*" not in sp and p.exists())):
+            out.append(name)
+    return out
 
 # ---------- 单会话判定（产出 raw 记录，不含日级反刷） ----------
 def judge(s, template_counts):

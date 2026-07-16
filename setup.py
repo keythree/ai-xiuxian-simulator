@@ -46,7 +46,7 @@ def first_scan(log=print):
     log("识别到法器：" + "、".join(core.SRC_NAMES.get(s, s) for s, _f, _p in sources))
     extra = core.detect_unsupported()
     if extra:
-        log("另发现尚未接入的法器：" + "、".join(extra) + "（GitHub 开 Issue 可帮你接入）")
+        log("另发现尚未接入的法器：" + "、".join(extra) + "（双击「③帮我接入新工具」自动打包样本，发出来很快接入）")
     import scan
     sys.argv = [sys.argv[0]]
     scan.main()
